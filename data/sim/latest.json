@@ -1,48 +1,48 @@
 {
- "checked_at": "2026-10-29T23:41:57+00:00",
+ "checked_at": "2026-10-29T23:42:22+00:00",
  "components": [
   {
    "key": "api",
    "name": "App server (API)",
    "state": "up",
-   "ms": 166
+   "ms": 73
   },
   {
    "key": "login",
    "name": "Login",
-   "state": "up",
-   "ms": 828
+   "state": "down",
+   "ms": 0
   },
   {
    "key": "database",
    "name": "Database",
-   "state": "up",
-   "ms": 649
+   "state": "slow",
+   "ms": 4200
   },
   {
    "key": "realtime",
    "name": "Chat & live updates",
    "state": "up",
-   "ms": 109
+   "ms": 181
   },
   {
    "key": "storage",
    "name": "Photos & documents",
-   "state": "up",
-   "ms": 693
+   "state": "down",
+   "ms": 180
   },
   {
    "key": "push",
    "name": "Push notifications",
    "state": "up",
-   "ms": 712
+   "ms": 616
   },
   {
    "key": "supabase",
    "name": "Supabase platform (Stockholm)",
    "state": "up",
-   "ms": 333
+   "ms": 457
   }
  ],
- "simulation": "history"
+ "simulation": "login:down,storage:error,database:slow"
 }
