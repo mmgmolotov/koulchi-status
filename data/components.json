@@ -1,0 +1,1 @@
+[{"key": "api", "name": "App server (API)"}, {"key": "login", "name": "Login"}, {"key": "database", "name": "Database"}, {"key": "realtime", "name": "Chat & live updates"}, {"key": "storage", "name": "Photos & documents"}, {"key": "push", "name": "Push notifications"}]
