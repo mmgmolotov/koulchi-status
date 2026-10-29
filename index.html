@@ -145,10 +145,7 @@ async function load() {
       </div>
       <div class="bars">${days.map(k => `<div class="bar ${classify(h[k])}" data-k="${c.key}" data-d="${k}"></div>`).join("")}</div>
       <div class="axis"><span>‹ ${DAYS} DAYS AGO</span><span>TODAY</span></div>
-      ${c.key === "supabase"
-        ? `<div class="src">From Supabase's public status page for our region (eu-north-1, Stockholm) ·
-           <a href="https://status.supabase.com" target="_blank" rel="noopener">status.supabase.com</a></div>`
-        : speed(recent[c.key] || [])}`;
+      ${speed(recent[c.key] || [])}`;
     list.appendChild(el);
   }
 
