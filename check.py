@@ -122,19 +122,89 @@ CHECKS = {"api": check_api, "login": check_login, "database": check_database,
           "supabase": check_supabase}
 
 
+# ---- Simulation -----------------------------------------------------------
+# SIMULATE="login:down,database:slow" fakes results for those parts (others
+# are checked for real). Modes: down (no answer), error (HTTP 500), slow
+# (4.2 s), ok. "all:down" fakes everything. "history" fills 90 days of
+# made-up history with a few incidents; "reset" clears the simulation.
+# Everything goes to data/sim/, never into the real history.
+SIMULATE = os.environ.get("SIMULATE", "").strip()
+
+
+def _sim_overrides():
+    out = {}
+    for part in [p.strip() for p in SIMULATE.split(",") if ":" in p]:
+        key, mode = part.split(":", 1)
+        for k in ([c[0] for c in COMPONENTS] if key == "all" else [key]):
+            out[k] = mode
+    return out
+
+
+def _sim_result(mode):
+    return {"down": (False, 0, "simulated outage: no answer"),
+            "error": (False, 180, "simulated error: HTTP 500"),
+            "slow": (True, 4200, None),
+            "ok": (True, 300, None)}.get(mode, (False, 0, "simulated: unknown mode " + mode))
+
+
+def _sim_history(now):
+    import random
+    random.seed(now.strftime("%Y%m%d"))
+    hist, recent = {}, {}
+    for key, _ in COMPONENTS:
+        days = hist[key] = {}
+        base = random.randint(250, 800)
+        for i in range(KEEP_DAYS - 1, -1, -1):
+            dk = _days_ago(now, i)
+            d = days[dk] = {"checks": 288, "up": 288, "slow": 0, "ms_total": base * 288, "incidents": []}
+            r = random.random()
+            if r < 0.04:                                   # an outage
+                mins = random.choice([10, 25, 45, 120])
+                h = random.randint(0, 22)
+                d["up"] -= mins // 5
+                d["incidents"].append({"start": f"{h:02d}:{random.randint(0,5)*10:02d}",
+                                       "end": f"{h + mins // 60 + 1:02d}:05",
+                                       "reason": random.choice(["no answer", "HTTP 500", "HTTP 503", "timed out"])})
+            elif r < 0.10:                                 # a slow day
+                d["slow"] = random.randint(70, 140)
+                d["ms_total"] = int(d["ms_total"] * 1.8)
+        recent[key] = [[(now).strftime("%Y-%m-%dT") + f"{(i * 5) // 60 % 24:02d}:{(i * 5) % 60:02d}",
+                        base + random.randint(-120, 400) + (2600 if 180 < i < 186 else 0),
+                        "d" if 200 < i < 204 else ("s" if 180 < i < 186 else "u")] for i in range(RECENT)]
+    return hist, recent
+
+
 def main():
+    global DATA
     now = datetime.now(timezone.utc)
+    overrides = {}
+    if SIMULATE:
+        import shutil
+        real, DATA = DATA, DATA / "sim"
+        if SIMULATE == "reset":
+            shutil.rmtree(DATA, ignore_errors=True); print("Simulation cleared."); return
+        DATA.mkdir(parents=True, exist_ok=True)
+        if SIMULATE == "history":
+            h, r = _sim_history(now)
+            (DATA / "history.json").write_text(json.dumps(h, separators=(",", ":")))
+            (DATA / "recent.json").write_text(json.dumps(r, separators=(",", ":")))
+        elif not (DATA / "history.json").exists():
+            for f in ("history.json", "recent.json"):     # start from the real data
+                if (real / f).exists(): shutil.copy(real / f, DATA / f)
+        overrides = _sim_overrides()
+        print("SIMULATION:", SIMULATE)
     day = now.strftime("%Y-%m-%d")
     recent_file = DATA / "recent.json"
     recent = json.loads(recent_file.read_text()) if recent_file.exists() else {}
     hist_file = DATA / "history.json"
     hist = json.loads(hist_file.read_text()) if hist_file.exists() else {}
-    latest = {"checked_at": now.isoformat(timespec="seconds"), "components": []}
+    latest = {"checked_at": now.isoformat(timespec="seconds"), "components": [],
+              "simulation": SIMULATE or None}
 
     for key, name in COMPONENTS:
         forced = None
         try:
-            res = CHECKS[key]()
+            res = _sim_result(overrides[key]) if key in overrides else CHECKS[key]()
             ok, ms, why = res[:3]
             forced = res[3] if len(res) > 3 else None
         except Exception as e:

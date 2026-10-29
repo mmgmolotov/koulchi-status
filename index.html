@@ -64,6 +64,8 @@
     <div class="logo">K</div>
     <div><h1>KoulchiConnect Status</h1><div class="sub">Live health of the KoulchiConnect app server</div></div>
   </header>
+  <div id="simbar" style="display:none;background:#3b2a07;color:#f5c451;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-weight:600;font-size:13px">
+    SIMULATION — made-up outages for testing. <a href="./" style="color:#f5c451">Back to real status</a></div>
   <div id="overall" class="overall loading">Loading…</div>
   <div id="list"></div>
   <footer>
@@ -75,7 +77,8 @@
 </div>
 <div id="tip" class="tip"></div>
 <script>
-const RAW = "https://raw.githubusercontent.com/mmgmolotov/koulchi-status/data/data/";
+const SIM = new URLSearchParams(location.search).has("sim");
+const RAW = "https://raw.githubusercontent.com/mmgmolotov/koulchi-status/data/data/" + (SIM ? "sim/" : "");
 const DAYS = 90;
 
 function dayKey(d) { return d.toISOString().slice(0, 10); }
@@ -120,6 +123,7 @@ async function load() {
   const down = latest.components.filter(c => c.state === "down").map(c => c.name);
   const ov = document.getElementById("overall");
   ov.className = "overall " + (down.length ? "bad" : "ok");
+  document.getElementById("simbar").style.display = SIM ? "block" : "none";
   ov.innerHTML = (down.length ? "Problem: " + esc(down.join(", ")) : "All systems operational") +
     `<small>Last check ${esc(new Date(latest.checked_at).toLocaleString())}</small>`;
 

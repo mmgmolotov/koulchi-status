@@ -5,6 +5,16 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      simulate:
+        description: >
+          Simulation (leave empty for a real check). Examples:
+          "login:down" · "database:slow" · "storage:error" · "all:down" ·
+          "login:down,push:error" · "all:ok" (recovery) · "history" (90 days of
+          made-up data) · "reset" (clear simulation). Shown at ?sim=1, never in
+          the real history.
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -47,13 +57,16 @@ jobs:
           KC_CLIENT_EMAIL: ${{ secrets.KC_CLIENT_EMAIL }}
           KC_CLIENT_PASSWORD: ${{ secrets.KC_CLIENT_PASSWORD }}
           STATUS_DATA: store/data
+          SIMULATE: ${{ github.event.inputs.simulate }}
         run: python3 check.py
 
       - name: Save results
+        env:
+          SIMULATE: ${{ github.event.inputs.simulate }}
         run: |
           cd store
           git add data
-          git commit -q -m "status $(date -u +%H:%M)" || exit 0
+          git commit -q -m "${SIMULATE:+[sim] }status $(date -u +%H:%M)" || exit 0
           for i in 1 2 3; do git push -q origin data && break; git pull -q --rebase origin data; done
 
       # An open issue while something is down, closed when it recovers.
@@ -62,12 +75,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DOWN: ${{ steps.run.outputs.down }}
+          SIMULATE: ${{ github.event.inputs.simulate }}
         run: |
-          OPEN=$(gh issue list --label outage --state open --json number -q '.[0].number')
+          # Simulations use their own label and a [TEST] title.
+          if [ -n "$SIMULATE" ]; then LABEL=outage-test; PREFIX="[TEST] "; else LABEL=outage; PREFIX=""; fi
+          [ "$SIMULATE" = "history" ] || [ "$SIMULATE" = "reset" ] && exit 0
+          OPEN=$(gh issue list --label "$LABEL" --state open --json number -q '.[0].number')
           if [ -n "$DOWN" ] && [ -z "$OPEN" ]; then
-            gh label create outage --color B60205 2>/dev/null || true
-            gh issue create --label outage --title "Down: $DOWN" \
-              --body "The status check could not reach: $DOWN (at $(date -u '+%Y-%m-%d %H:%M') UTC)."
+            gh label create "$LABEL" --color B60205 2>/dev/null || true
+            gh issue create --label "$LABEL" --title "${PREFIX}Down: $DOWN" \
+              --body "${PREFIX}The status check could not reach: $DOWN (at $(date -u '+%Y-%m-%d %H:%M') UTC)."
           elif [ -z "$DOWN" ] && [ -n "$OPEN" ]; then
-            gh issue close "$OPEN" --comment "Recovered at $(date -u '+%Y-%m-%d %H:%M') UTC."
+            gh issue close "$OPEN" --comment "${PREFIX}Recovered at $(date -u '+%Y-%m-%d %H:%M') UTC."
           fi
