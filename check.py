@@ -29,7 +29,10 @@ COMPONENTS = [
     ("realtime", "Chat & live updates"),
     ("storage", "Photos & documents"),
     ("push", "Push notifications"),
+    ("supabase", "Supabase platform (Stockholm)"),
 ]
+SUPABASE_REGION = "eu-north-1"
+RECENT = 288          # last 24 h of checks kept for the speed chart
 
 
 def http(method, path, body=None, token=None, timeout=15):
@@ -96,23 +99,47 @@ def check_realtime():
         return False, 0, str(e)[:120]
 
 
+def check_supabase():
+    # Supabase's own public status for our region: tells their outages
+    # apart from ours.
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen("https://status.supabase.com/api/v2/components.json", timeout=15) as r:
+            comps = json.loads(r.read())["components"]
+    except Exception as e:
+        return False, 0, "status feed unreachable: " + str(e)[:80], "down"
+    ms = (time.perf_counter() - t0) * 1000
+    states = {c["status"] for c in comps if c["name"] == SUPABASE_REGION}
+    if "major_outage" in states:
+        return False, ms, "Supabase reports a major outage in " + SUPABASE_REGION, "down"
+    if states & {"partial_outage", "degraded_performance", "under_maintenance"}:
+        return True, ms, "Supabase reports " + ", ".join(sorted(states - {"operational"})).replace("_", " "), "slow"
+    return True, ms, None, "up"
+
+
 CHECKS = {"api": check_api, "login": check_login, "database": check_database,
-          "realtime": check_realtime, "storage": check_storage, "push": check_push}
+          "realtime": check_realtime, "storage": check_storage, "push": check_push,
+          "supabase": check_supabase}
 
 
 def main():
     now = datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")
+    recent_file = DATA / "recent.json"
+    recent = json.loads(recent_file.read_text()) if recent_file.exists() else {}
     hist_file = DATA / "history.json"
     hist = json.loads(hist_file.read_text()) if hist_file.exists() else {}
     latest = {"checked_at": now.isoformat(timespec="seconds"), "components": []}
 
     for key, name in COMPONENTS:
+        forced = None
         try:
-            ok, ms, why = CHECKS[key]()
+            res = CHECKS[key]()
+            ok, ms, why = res[:3]
+            forced = res[3] if len(res) > 3 else None
         except Exception as e:
             ok, ms, why = False, 0, str(e)[:120]
-        state = "down" if not ok else ("slow" if ms > SLOW_MS else "up")
+        state = forced or ("down" if not ok else ("slow" if ms > SLOW_MS else "up"))
         days = hist.setdefault(key, {})
         d = days.setdefault(day, {"checks": 0, "up": 0, "slow": 0, "ms_total": 0, "incidents": []})
         d["checks"] += 1
@@ -134,9 +161,14 @@ def main():
             (open_inc or prev_open)["end"] = now.strftime("%H:%M")
         for old in [k for k in days if k < _days_ago(now, KEEP_DAYS)]:
             del days[old]
+        if key != "supabase":
+            pts = recent.setdefault(key, [])
+            pts.append([now.strftime("%Y-%m-%dT%H:%M"), round(ms), state[0]])
+            del pts[:-RECENT]
         latest["components"].append({"key": key, "name": name, "state": state, "ms": round(ms)})
         print(f"{name:24} {state:5} {round(ms):6} ms  {'' if ok else why}")
 
+    recent_file.write_text(json.dumps(recent, separators=(",", ":")))
     hist_file.write_text(json.dumps(hist, separators=(",", ":")))
     (DATA / "latest.json").write_text(json.dumps(latest, indent=1))
     (DATA / "components.json").write_text(json.dumps([{"key": k, "name": n} for k, n in COMPONENTS]))

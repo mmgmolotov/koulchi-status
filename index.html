@@ -48,6 +48,12 @@
          box-shadow: 0 8px 24px rgba(0,0,0,.5); }
   .tip b { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; letter-spacing: .08em; }
   .tip .inc { margin-top: 6px; color: #ffb3bf; }
+  .speed { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .speed svg { flex: 1; height: 36px; background: #0b0f14; border-radius: 6px; }
+  .speed .stat { color: var(--muted); font-size: 12px; white-space: nowrap; text-align: right; }
+  .speed .stat b { color: var(--text); font-weight: 600; }
+  .src { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .src a { color: var(--muted); }
   footer { color: var(--muted); font-size: 12px; margin-top: 36px; line-height: 1.6; }
   @media (max-width: 600px) { .bars { gap: 1px; height: 30px; } .axis .mid { display: none; } }
 </style>
@@ -61,7 +67,8 @@
   <div id="overall" class="overall loading">Loading…</div>
   <div id="list"></div>
   <footer>
-    Checked about every 5 minutes from GitHub. Green: working. Yellow: slow (over 2.5 s) or a short
+    Checked about every 5 minutes from GitHub. The line under each part is its response time over the
+    last 24 hours (red marks = failed checks; p95 = 95% of checks were faster). Green: working. Yellow: slow (over 2.5 s) or a short
     interruption that day. Red: down for a significant part of the day. Grey: no data yet.<br>
     Times are UTC. No user data is collected by these checks.
   </footer>
@@ -79,12 +86,30 @@ function classify(d) {
   if (up < 0.999 || d.slow / d.checks > 0.2) return "slow";
   return "up";
 }
+// Response time over the last 24 hours (one point per check).
+function speed(pts) {
+  if (pts.length < 2) return `<div class="src">Speed chart appears after a few checks.</div>`;
+  const ms = pts.map(p => p[1]).filter(v => v > 0);
+  const max = Math.max(...ms, 1000), W = 600, H = 36;
+  const xy = pts.map((p, i) => [i / (pts.length - 1) * W, H - 3 - Math.min(p[1], max) / max * (H - 6)]);
+  const line = xy.map(([x, y]) => x.toFixed(1) + "," + y.toFixed(1)).join(" ");
+  const downs = pts.map((p, i) => p[2] === "d" ? `<rect x="${(xy[i][0] - 2).toFixed(1)}" y="0" width="4" height="${H}" fill="#a33a4a"/>` : "").join("");
+  const slowY = (H - 3 - Math.min(2500, max) / max * (H - 6)).toFixed(1);
+  const avg = Math.round(ms.reduce((a, b) => a + b, 0) / ms.length);
+  const sorted = [...ms].sort((a, b) => a - b), p95 = sorted[Math.floor(sorted.length * 0.95) - 1] || sorted.at(-1);
+  return `<div class="speed">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${downs}
+      ${max > 2500 ? `<line x1="0" x2="${W}" y1="${slowY}" y2="${slowY}" stroke="#c9b037" stroke-dasharray="4 4" stroke-width="1"/>` : ""}
+      <polyline points="${line}" fill="none" stroke="#2bd4a4" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>
+    <div class="stat">last 24 h<br>avg <b>${avg} ms</b> · p95 <b>${p95} ms</b></div></div>`;
+}
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 async function load() {
   const bust = "?t=" + Date.now();
-  const [comps, hist, latest] = await Promise.all(
-    ["components.json", "history.json", "latest.json"].map(f => fetch(RAW + f + bust).then(r => r.json())));
+  const [comps, hist, latest, recent] = await Promise.all(
+    ["components.json", "history.json", "latest.json", "recent.json"].map(f =>
+      fetch(RAW + f + bust).then(r => r.ok ? r.json() : {}).catch(() => ({}))));
   const today = new Date();
   const days = [];
   for (let i = DAYS - 1; i >= 0; i--) {
@@ -115,7 +140,11 @@ async function load() {
           ${pct === null ? "no data yet" : pct.toFixed(2) + "% uptime"}</div>
       </div>
       <div class="bars">${days.map(k => `<div class="bar ${classify(h[k])}" data-k="${c.key}" data-d="${k}"></div>`).join("")}</div>
-      <div class="axis"><span>‹ ${DAYS} DAYS AGO</span><span>TODAY</span></div>`;
+      <div class="axis"><span>‹ ${DAYS} DAYS AGO</span><span>TODAY</span></div>
+      ${c.key === "supabase"
+        ? `<div class="src">From Supabase's public status page for our region (eu-north-1, Stockholm) ·
+           <a href="https://status.supabase.com" target="_blank" rel="noopener">status.supabase.com</a></div>`
+        : speed(recent[c.key] || [])}`;
     list.appendChild(el);
   }
 
