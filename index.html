@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KoulchiConnect Status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #05070a; --panel: #0b0f14; --text: #e5e7eb; --muted: #8b949e;
+    --up: #0f7a62; --up-text: #2bd4a4; --slow: #c9b037; --down: #a33a4a; --none: #1f2630;
+    --teal: #1584A1;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: Inter, system-ui, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .logo { width: 40px; height: 40px; border-radius: 12px;
+          background: linear-gradient(#1584A1, #1A9EC0); display: grid; place-items: center;
+          font-weight: 700; color: #fff; }
+  h1 { font-size: 20px; margin: 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .overall { border-radius: 14px; padding: 16px 20px; margin-bottom: 28px; font-weight: 600;
+             display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .overall.ok { background: rgba(15,122,98,.18); color: var(--up-text); }
+  .overall.bad { background: rgba(163,58,74,.2); color: #ff8a9b; }
+  .overall.loading { background: var(--panel); color: var(--muted); }
+  .overall small { font-weight: 400; color: var(--muted); }
+  .comp { margin-bottom: 26px; }
+  .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+  .name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center;
+         font-size: 11px; color: #05070a; font-weight: 700; flex: none; }
+  .dot.up { background: var(--up-text); } .dot.slow { background: var(--slow); }
+  .dot.down { background: #ff6b81; } .dot.none { background: var(--none); }
+  .pct { color: var(--up-text); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .pct.warn { color: var(--slow); } .pct.bad { color: #ff8a9b; }
+  .bars { display: flex; gap: 2px; height: 34px; }
+  .bar { flex: 1; border-radius: 2px; background: var(--none); position: relative; cursor: pointer; min-width: 2px; }
+  .bar.up { background: var(--up); } .bar.slow { background: var(--slow); } .bar.down { background: var(--down); }
+  .bar:hover { filter: brightness(1.35); }
+  .axis { display: flex; justify-content: space-between; color: var(--muted);
+          font-size: 11px; letter-spacing: .08em; margin-top: 6px; font-weight: 600; }
+  .tip { position: fixed; z-index: 10; background: #11161d; border: 1px solid #263040; border-radius: 10px;
+         padding: 12px 14px; font-size: 13px; max-width: 300px; pointer-events: none; display: none;
+         box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .tip b { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; letter-spacing: .08em; }
+  .tip .inc { margin-top: 6px; color: #ffb3bf; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 36px; line-height: 1.6; }
+  @media (max-width: 600px) { .bars { gap: 1px; height: 30px; } .axis .mid { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">K</div>
+    <div><h1>KoulchiConnect Status</h1><div class="sub">Live health of the KoulchiConnect app server</div></div>
+  </header>
+  <div id="overall" class="overall loading">Loading…</div>
+  <div id="list"></div>
+  <footer>
+    Checked about every 5 minutes from GitHub. Green: working. Yellow: slow (over 2.5 s) or a short
+    interruption that day. Red: down for a significant part of the day. Grey: no data yet.<br>
+    Times are UTC. No user data is collected by these checks.
+  </footer>
+</div>
+<div id="tip" class="tip"></div>
+<script>
+const RAW = "https://raw.githubusercontent.com/mmgmolotov/koulchi-status/data/data/";
+const DAYS = 90;
+
+function dayKey(d) { return d.toISOString().slice(0, 10); }
+function classify(d) {
+  if (!d || !d.checks) return "none";
+  const up = d.up / d.checks;
+  if (up < 0.95) return "down";
+  if (up < 0.999 || d.slow / d.checks > 0.2) return "slow";
+  return "up";
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function load() {
+  const bust = "?t=" + Date.now();
+  const [comps, hist, latest] = await Promise.all(
+    ["components.json", "history.json", "latest.json"].map(f => fetch(RAW + f + bust).then(r => r.json())));
+  const today = new Date();
+  const days = [];
+  for (let i = DAYS - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+    days.push(dayKey(d));
+  }
+  const now = Object.fromEntries(latest.components.map(c => [c.key, c]));
+  const down = latest.components.filter(c => c.state === "down").map(c => c.name);
+  const ov = document.getElementById("overall");
+  ov.className = "overall " + (down.length ? "bad" : "ok");
+  ov.innerHTML = (down.length ? "Problem: " + esc(down.join(", ")) : "All systems operational") +
+    `<small>Last check ${esc(new Date(latest.checked_at).toLocaleString())}</small>`;
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for (const c of comps) {
+    const h = hist[c.key] || {};
+    let checks = 0, up = 0;
+    for (const k of days) if (h[k]) { checks += h[k].checks; up += h[k].up; }
+    const pct = checks ? (100 * up / checks) : null;
+    const state = now[c.key] ? now[c.key].state : "none";
+    const el = document.createElement("div");
+    el.className = "comp";
+    el.innerHTML = `
+      <div class="row">
+        <div class="name"><span class="dot ${state}">${state === "down" ? "!" : "✓"}</span>${esc(c.name)}</div>
+        <div class="pct ${pct === null ? "" : pct < 99 ? "bad" : pct < 99.9 ? "warn" : ""}">
+          ${pct === null ? "no data yet" : pct.toFixed(2) + "% uptime"}</div>
+      </div>
+      <div class="bars">${days.map(k => `<div class="bar ${classify(h[k])}" data-k="${c.key}" data-d="${k}"></div>`).join("")}</div>
+      <div class="axis"><span>‹ ${DAYS} DAYS AGO</span><span>TODAY</span></div>`;
+    list.appendChild(el);
+  }
+
+  const tip = document.getElementById("tip");
+  list.onmousemove = e => {
+    const b = e.target.closest(".bar");
+    if (!b) { tip.style.display = "none"; return; }
+    const d = (hist[b.dataset.k] || {})[b.dataset.d];
+    const date = new Date(b.dataset.d + "T00:00:00Z").toLocaleDateString(undefined,
+      { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+    let html = `<b>${esc(date.toUpperCase())}</b>`;
+    if (!d || !d.checks) html += "No data";
+    else {
+      html += `${(100 * d.up / d.checks).toFixed(2)}% up · ${d.checks} checks · avg ${Math.round(d.ms_total / d.checks)} ms`;
+      for (const i of d.incidents || [])
+        html += `<div class="inc">Down ${esc(i.start)}–${esc(i.end || "ongoing")} UTC · ${esc(i.reason || "")}</div>`;
+      if (!(d.incidents || []).length && d.slow) html += `<div class="inc" style="color:#e6d27a">${d.slow} slow checks</div>`;
+    }
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+    tip.style.left = x + "px"; tip.style.top = (e.clientY + 16) + "px";
+  };
+  list.onmouseleave = () => tip.style.display = "none";
+  list.onclick = list.onmousemove;   // tap on phones
+}
+
+load().catch(() => {
+  const ov = document.getElementById("overall");
+  ov.className = "overall loading";
+  ov.textContent = "No data yet: the first check runs within a few minutes.";
+});
+setInterval(() => load().catch(() => {}), 120000);
+</script>
+</body>
+</html>

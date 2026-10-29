@@ -1,0 +1,73 @@
+name: Status check
+
+# Every 5 minutes (GitHub may delay scheduled runs by a few minutes).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: status-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Results live on the "data" branch, so the page itself is only
+      # rebuilt when the page changes, not on every check.
+      - name: Open the data branch
+        run: |
+          git config user.name "status-bot"
+          git config user.email "status-bot@users.noreply.github.com"
+          if git ls-remote --exit-code origin data >/dev/null; then
+            git fetch origin data
+            git worktree add store origin/data -B data
+          else
+            git worktree add --orphan -b data store
+          fi
+          mkdir -p store/data
+
+      - run: pip install -q websockets
+
+      - name: Run checks
+        id: run
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          KC_CLIENT_EMAIL: ${{ secrets.KC_CLIENT_EMAIL }}
+          KC_CLIENT_PASSWORD: ${{ secrets.KC_CLIENT_PASSWORD }}
+          STATUS_DATA: store/data
+        run: python3 check.py
+
+      - name: Save results
+        run: |
+          cd store
+          git add data
+          git commit -q -m "status $(date -u +%H:%M)" || exit 0
+          for i in 1 2 3; do git push -q origin data && break; git pull -q --rebase origin data; done
+
+      # An open issue while something is down, closed when it recovers.
+      # GitHub emails the repo owner for both.
+      - name: Outage alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOWN: ${{ steps.run.outputs.down }}
+        run: |
+          OPEN=$(gh issue list --label outage --state open --json number -q '.[0].number')
+          if [ -n "$DOWN" ] && [ -z "$OPEN" ]; then
+            gh label create outage --color B60205 2>/dev/null || true
+            gh issue create --label outage --title "Down: $DOWN" \
+              --body "The status check could not reach: $DOWN (at $(date -u '+%Y-%m-%d %H:%M') UTC)."
+          elif [ -z "$DOWN" ] && [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "Recovered at $(date -u '+%Y-%m-%d %H:%M') UTC."
+          fi
