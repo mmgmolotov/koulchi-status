@@ -1,5 +1,5 @@
 {
- "checked_at": "2026-11-04T11:20:08+00:00",
+ "checked_at": "2026-11-04T18:44:32+00:00",
  "components": [
   {
    "key": "api",
@@ -11,31 +11,31 @@
    "key": "login",
    "name": "Login",
    "state": "up",
-   "ms": 1220
+   "ms": 1129
   },
   {
    "key": "database",
    "name": "Database",
    "state": "up",
-   "ms": 1112
+   "ms": 1098
   },
   {
    "key": "realtime",
    "name": "Chat & live updates",
    "state": "up",
-   "ms": 161
+   "ms": 204
   },
   {
    "key": "storage",
    "name": "Photos & documents",
    "state": "up",
-   "ms": 875
+   "ms": 898
   },
   {
    "key": "push",
    "name": "Push notifications",
    "state": "up",
-   "ms": 999
+   "ms": 1024
   }
  ],
  "simulation": null
