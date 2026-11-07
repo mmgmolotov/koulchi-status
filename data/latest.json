@@ -1,41 +1,41 @@
 {
- "checked_at": "2026-11-07T14:12:10+00:00",
+ "checked_at": "2026-11-07T18:50:11+00:00",
  "components": [
   {
    "key": "api",
    "name": "App server (API)",
    "state": "up",
-   "ms": 205
+   "ms": 217
   },
   {
    "key": "login",
    "name": "Login",
    "state": "up",
-   "ms": 1228
+   "ms": 992
   },
   {
    "key": "database",
    "name": "Database",
    "state": "up",
-   "ms": 1054
+   "ms": 869
   },
   {
    "key": "realtime",
    "name": "Chat & live updates",
    "state": "up",
-   "ms": 179
+   "ms": 112
   },
   {
    "key": "storage",
    "name": "Photos & documents",
    "state": "up",
-   "ms": 926
+   "ms": 403
   },
   {
    "key": "push",
    "name": "Push notifications",
    "state": "up",
-   "ms": 973
+   "ms": 776
   }
  ],
  "simulation": null
